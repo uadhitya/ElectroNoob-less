@@ -11,96 +11,114 @@ Version: 1.0.0
 import streamlit as st
 import math
 
-# --- KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="ElectroNoob-less: Architect", layout="wide")
+# --- KONFIGURASI DASAR ---
+st.set_page_config(page_title="ElectroNoob-less Architect", layout="wide")
 
-st.title("⚡ ElectroNoob-less: Independent Power Architect")
-st.markdown("---")
+# --- NAVIGASI MULTI-PAGE ---
+page = st.sidebar.radio("Navigasi Sistem", 
+    ["🏠 Dashboard Utama", "☀️ Modul Surya", "🌬️ Modul Angin & Reducer", "🧲 Desain AFG (N52)", "🔋 Manajemen Baterai"])
 
-# --- SIDEBAR: INPUT TEKNIS (DISIPLIN) ---
-st.sidebar.header("🛠️ Parameter Rekayasa")
+# --- SHARED STATE (INPUT BEBAN UTAMA) ---
+st.sidebar.markdown("---")
+st.sidebar.header("🎯 Target Sistem")
+load_watt = st.sidebar.number_input("Total Beban (Watt)", min_value=1.0, value=200.0)
+daily_hours = st.sidebar.number_input("Jam Pakai/Hari", min_value=1, max_value=24, value=12)
+sys_volt = st.sidebar.selectbox("Voltase Sistem (V)", [12, 24, 48])
 
-# 1. Kebutuhan Beban
-st.sidebar.subheader("1. Kebutuhan Beban")
-load_watt = st.sidebar.number_input("Total Beban (Watt)", min_value=1.0, value=100.0)
-duration = st.sidebar.number_input("Durasi Pakai (Jam/Hari)", min_value=1, max_value=24, value=12)
-autonomy_days = 5  # Dikunci sesuai instruksi Operator
+# Hitungan Dasar Otonomi (5 Hari)
+daily_energy_wh = load_watt * daily_hours
+total_storage_needed_wh = daily_energy_wh * 5 
 
-# 2. Sistem Voltase
-st.sidebar.subheader("2. Voltase Sistem")
-system_voltage = st.sidebar.selectbox("Pilih Voltase Baterai (V)", [12, 24, 48])
+# --- 1. DASHBOARD UTAMA ---
+if page == "🏠 Dashboard Utama":
+    st.header("📊 Ringkasan Arsitektur Sistem")
+    st.info("Sistem ini dirancang untuk ketahanan 5 hari tanpa input energi (Otonomi Penuh).")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Total Energi Harian", f"{daily_energy_wh} Wh")
+        st.metric("Target Cadangan (5 Hari)", f"{total_storage_needed_wh / 1000:.2f} kWh")
+    
+    with col2:
+        st.metric("Arus Sistem Puncak", f"{load_watt / sys_volt:.2f} A")
+        st.write("**Status Kelayakan:**")
+        if (load_watt / sys_volt) > 50:
+            st.error("Arus terlalu tinggi untuk kabel standar. Disarankan naik ke 24V/48V.")
+        else:
+            st.success("Arus dalam batas aman untuk komponen standar.")
 
-# 3. Potensi Alam & Mekanis
-st.sidebar.subheader("3. Mekanis & Angin")
-wind_speed = st.sidebar.number_input("Kecepatan Angin Rata-rata (m/s)", value=5.0)
-turbine_diameter = st.sidebar.number_input("Diameter Turbin (m)", value=2.0)
-pulley_ratio = st.sidebar.number_input("Rasio Reducer (1:X)", min_value=1.0, value=3.0)
+# --- 2. MODUL SURYA ---
+elif page == "☀️ Modul Surya":
+    st.header("☀️ Kalkulasi Panel Surya")
+    sun_hours = st.number_input("Rata-rata Jam Matahari Terik", value=4.0)
+    panel_watt = st.number_input("Kapasitas Per Panel (Wp)", value=100)
+    
+    # Logic: Panel harus bisa mengisi beban harian dalam waktu matahari terik
+    required_panel_watt = daily_energy_wh / (sun_hours * 0.7) # 0.7 efisiensi sistem
+    num_panels = math.ceil(required_panel_watt / panel_watt)
+    
+    st.subheader("Hasil Rekomendasi")
+    st.write(f"Untuk menutup beban {daily_energy_wh} Wh/hari, Anda membutuhkan:")
+    st.metric("Total Kapasitas Surya", f"{required_panel_watt:.1f} Wp")
+    st.metric("Jumlah Panel", f"{num_panels} Unit (@{panel_watt}Wp)")
 
-# --- CORE LOGIC: CALCULATION ENGINE ---
+# --- 3. MODUL ANGIN & REDUCER ---
+elif page == "🌬️ Modul Angin & Reducer":
+    st.header("🌬️ Mekanis Turbin & Reducer")
+    v_wind = st.number_input("Kecepatan Angin (m/s)", value=5.0)
+    r_turbine = st.number_input("Jari-jari Bilah (m)", value=1.0)
+    
+    # Betz Limit & Efficiency
+    p_wind = 0.5 * 1.225 * (math.pi * r_turbine**2) * v_wind**3 * 0.3 # 0.3 efisiensi nyata
+    
+    st.subheader("Gearbox / Reducer")
+    pulley_ratio = st.number_input("Rasio Pulley (1:X)", value=3.0)
+    rpm_turbine = (v_wind * 60) / (2 * math.pi * r_turbine) # Estimasi RPM dasar
+    rpm_gen = rpm_turbine * pulley_ratio
+    
+    st.metric("Potensi Daya Angin", f"{p_wind:.1f} Watt")
+    st.metric("RPM Generator (Output Reducer)", f"{int(rpm_gen)} RPM")
+    
+    if pulley_ratio > 5:
+        st.warning("⚠️ Rasio terlalu tinggi dapat menyebabkan beban awal (cogging) terlalu berat.")
 
-# A. Kalkulasi Baterai (5 Hari Otonom)
-daily_energy = load_watt * duration  # Wh
-total_energy_needed = daily_energy * autonomy_days
-battery_ah = total_energy_needed / (system_voltage * 0.8)  # DoD 80% untuk Lithium
+# --- 4. DESAIN AFG (N52) ---
+elif page == "🧲 Desain AFG (N52)":
+    st.header("🧲 Generator Axial Flux (N52)")
+    st.write("Parameter magnet dikunci pada N52 (1.4 Tesla).")
+    
+    rpm_input = st.number_input("RPM Operasional (dari Reducer)", value=300)
+    
+    # Faraday Law: V = B * A * omega * N
+    # Kita balik untuk cari N (Lilitan)
+    b_field = 1.4
+    area_coil = 0.0025 # m^2
+    omega = (2 * math.pi * rpm_input) / 60
+    
+    if omega > 0:
+        n_turns = math.ceil(sys_volt / (b_field * area_coil * omega))
+    else:
+        n_turns = 0
+        
+    st.metric("Jumlah Lilitan Per Koil", f"{n_turns} Lilitan")
+    
+    current_sys = load_watt / sys_volt
+    wire_size = math.sqrt(current_sys / 5.0) # 5A/mm2 density
+    st.metric("Rekomendasi Diameter Kawat", f"{wire_size:.2f} mm")
 
-# B. Kalkulasi AFG (Standard N52)
-# Konstanta Fisika N52
-B_field = 1.4  # Tesla (Standard N52)
-coil_area = 0.002  # m^2 (Estimasi Koil Trapesium)
-target_rpm = (wind_speed * 60) * pulley_ratio # Estimasi RPM Generator
+# --- 5. MANAJEMEN BATERAI ---
+elif page == "🔋 Manajemen Baterai":
+    st.header("🔋 Sistem Penyimpanan (5 Hari Otonom)")
+    dod = st.slider("Depth of Discharge (%)", 10, 90, 80)
+    
+    capacity_ah = (total_storage_needed_wh) / (sys_volt * (dod/100))
+    
+    st.subheader("Spesifikasi Bank Baterai")
+    st.metric("Total Kapasitas Dibutuhkan", f"{int(capacity_ah)} Ah")
+    st.write(f"Kapasitas ini menjamin sistem menyala selama **5 hari** tanpa pengisian.")
+    
+    if capacity_ah > 1000:
+        st.error("Kapasitas terlalu besar untuk baterai tunggal. Gunakan bank baterai paralel.")
 
-# Rumus Faraday: N = V / (B * A * omega)
-omega = (2 * math.pi * target_rpm) / 60
-if omega > 0:
-    required_turns = math.ceil(system_voltage / (B_field * coil_area * omega))
-else:
-    required_turns = 0
-
-# C. Safety Check: Diameter Kawat
-current_load = load_watt / system_voltage
-# Standar keamanan: 1mm kawat tembaga aman untuk ~5A
-min_wire_diameter = math.sqrt(current_load / 5.0)
-
-# --- DISPLAY DASHBOARD ---
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.metric("Kapasitas Baterai (5 Hari)", f"{battery_ah:.1f} Ah")
-    st.caption(f"Target Otonomi: {autonomy_days} Hari")
-
-with col2:
-    st.metric("Jumlah Lilitan AFG", f"{required_turns} Lilitan")
-    st.caption(f"Berdasarkan Flux N52: {B_field}T")
-
-with col3:
-    st.metric("Min. Diameter Kawat", f"{min_wire_diameter:.2f} mm")
-    st.caption(f"Arus Puncak: {current_load:.1f} A")
-
-# --- SYSTEM STATUS (DECISION MAKER) ---
-st.markdown("### 📋 System Health Audit")
-
-errors = []
-warnings = []
-
-if battery_ah > 1000:
-    errors.append("Kapasitas baterai terlalu besar untuk sistem rumahan. Pertimbangkan menaikkan voltase ke 48V.")
-if min_wire_diameter > 3.0:
-    warnings.append("Kawat sangat tebal (>3mm). Gunakan lilitan ganda (multistrand) untuk kemudahan fabrikasi.")
-if pulley_ratio > 5:
-    warnings.append("Rasio reducer terlalu tinggi. Risiko turbin macet (Stall) pada angin rendah.")
-
-if not errors and not warnings:
-    st.success("✅ Desain Sistem: LAYAK (Fungsional & Aman)")
-else:
-    for err in errors:
-        st.error(f"❌ ERROR: {err}")
-    for warn in warnings:
-        st.warning(f"⚠️ PERINGATAN: {warn}")
-
-# --- EDUKASI OPERATOR ---
-with st.expander("Lihat Dasar Fisika (The Noob-less Insight)"):
-    st.write(f"""
-    - **Hukum Faraday:** Tegangan induksi ({system_voltage}V) dihasilkan dari perubahan fluks magnet N52 ({B_field}T) terhadap waktu.
-    - **Hukum Joule:** Arus sebesar {current_load:.1f}A akan memanaskan kawat. Kawat {min_wire_diameter:.2f}mm dipilih untuk mencegah kebakaran stator.
-    - **Otonomi:** Desain ini menjamin alat tetap hidup selama {autonomy_days} hari tanpa input energi sama sekali.
-    """)
+st.sidebar.markdown("---")
+st.sidebar.caption("ElectroNoob-less v2.0 | Engineering Mode")
